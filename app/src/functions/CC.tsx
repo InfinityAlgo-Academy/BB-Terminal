@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   fetchIndexHistorical, fetchTreasuryRates, fetchFxHistorical, fetchCryptoHistorical,
-  fetchGainers, fetchLosers, fetchNewsCompany,
+  fetchGainers, fetchLosers, fetchMostActive, fetchNewsCompany,
 } from "@/lib/api";
 import { fmtPrice, fmtPct, fmtTime, fmtPctFromDecimal } from "@/lib/format";
 import { useWorkspace } from "@/store/workspaceStore";
@@ -12,6 +12,15 @@ const INDICES = [
   { sym: "^DJI",  name: "Dow Jones" },
   { sym: "^IXIC", name: "NASDAQ" },
   { sym: "^RUT",  name: "Russell 2k" },
+  { sym: "^NDX",  name: "Nasdaq 100" },
+  { sym: "^SOX",  name: "Semicon" },
+  { sym: "^SP400",  name: "S&P 400" },
+  { sym: "^SP600",  name: "S&P 600" },
+  { sym: "^NYA",  name: "NYSE" },
+  { sym: "^DJT",  name: "Transports" },
+  { sym: "^DJU",  name: "Utilities" },
+  { sym: "^RUI",  name: "Russell 1k" },
+  { sym: "^VXN",  name: "NDX Vol" },
   { sym: "^VIX",  name: "VIX" },
 ];
 
@@ -19,8 +28,19 @@ const FX_CRYPTO = [
   { sym: "EURUSD=X", name: "EUR/USD", kind: "fx", digits: 4 },
   { sym: "GBPUSD=X", name: "GBP/USD", kind: "fx", digits: 4 },
   { sym: "USDJPY=X", name: "USD/JPY", kind: "fx", digits: 2 },
+  { sym: "USDCHF=X", name: "USD/CHF", kind: "fx", digits: 4 },
+  { sym: "AUDUSD=X", name: "AUD/USD", kind: "fx", digits: 4 },
+  { sym: "USDCAD=X", name: "USD/CAD", kind: "fx", digits: 4 },
+  { sym: "NZDUSD=X", name: "NZD/USD", kind: "fx", digits: 4 },
   { sym: "BTC-USD",  name: "BTC",     kind: "crypto", digits: 0 },
   { sym: "ETH-USD",  name: "ETH",     kind: "crypto", digits: 0 },
+  { sym: "SOL-USD",  name: "SOL",     kind: "crypto", digits: 2 },
+  { sym: "XRP-USD",  name: "XRP",     kind: "crypto", digits: 3 },
+  { sym: "DOGE-USD", name: "DOGE",    kind: "crypto", digits: 4 },
+  { sym: "ADA-USD",  name: "ADA",     kind: "crypto", digits: 3 },
+  { sym: "EURGBP=X", name: "EUR/GBP", kind: "fx", digits: 4 },
+  { sym: "LINK-USD", name: "LINK",    kind: "crypto", digits: 2 },
+  { sym: "DOT-USD",  name: "DOT",     kind: "crypto", digits: 2 },
 ];
 
 function Spark({ values, color = "#ff8c00" }: { values: number[]; color?: string }) {
@@ -71,10 +91,11 @@ export function CC() {
   // Movers
   const gainers = useQuery({ queryKey: ["cc-gainers"], queryFn: fetchGainers, refetchInterval: 120_000 });
   const losers = useQuery({ queryKey: ["cc-losers"], queryFn: fetchLosers, refetchInterval: 120_000 });
+  const mostActive = useQuery({ queryKey: ["cc-active"], queryFn: fetchMostActive, refetchInterval: 120_000 });
 
   // News — use SPY as macro feed
   const news = useQuery({
-    queryKey: ["cc-news"], queryFn: () => fetchNewsCompany("SPY", 12),
+    queryKey: ["cc-news"], queryFn: () => fetchNewsCompany("SPY", 20),
     staleTime: 60_000,
   });
 
@@ -82,6 +103,8 @@ export function CC() {
     ? (today.year_10 - today.year_2) * 100 : undefined;
   const spread3m10y = today?.year_10 != null && today?.month_3 != null
     ? (today.year_10 - today.month_3) * 100 : undefined;
+  const spread5y30y = today?.year_30 != null && today?.year_5 != null
+    ? (today.year_30 - today.year_5) * 100 : undefined;
   const curveStatus =
     spread2y10y == null ? { t: "—", tone: "text-term-muted" as const }
     : spread2y10y < 0 ? { t: "INVERTED", tone: "down" as const }
@@ -93,7 +116,7 @@ export function CC() {
     <div className="p-3 grid gap-3 h-full"
       style={{
         gridTemplateColumns: "minmax(0,2fr) minmax(0,1fr) minmax(0,1fr)",
-        gridTemplateRows: "minmax(160px, 1fr) minmax(0,1fr)",
+        gridTemplateRows: "minmax(160px, 1fr) minmax(0,1fr) minmax(0,auto)",
       }}>
       {/* MARKETS */}
       <div className="panel">
@@ -101,7 +124,7 @@ export function CC() {
           <span>US MARKETS</span>
           <span className="sub-header normal-case tracking-normal font-normal">close-over-close · 14d</span>
         </div>
-        <div className="grid grid-cols-5 divide-x divide-term-border">
+        <div className="grid grid-cols-4 divide-x divide-term-border">
           {INDICES.map((idx, i) => {
             const q = idxQueries[i];
             const data = q.data ?? [];
@@ -151,8 +174,15 @@ export function CC() {
               {spread3m10y == null ? "—" : `${spread3m10y >= 0 ? "+" : ""}${spread3m10y.toFixed(0)} bps`}
             </span>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="sub-header">5y-30y SPREAD</span>
+            <span className={cn("num font-semibold",
+              spread5y30y == null ? "" : spread5y30y >= 0 ? "up" : "down")}>
+              {spread5y30y == null ? "—" : `${spread5y30y >= 0 ? "+" : ""}${spread5y30y.toFixed(0)} bps`}
+            </span>
+          </div>
           <div className="border-t border-term-borderSoft pt-2 mt-1 grid grid-cols-6 gap-1">
-            {[["3M","month_3"],["1Y","year_1"],["2Y","year_2"],["5Y","year_5"],["10Y","year_10"],["30Y","year_30"]].map(([l,k]) => (
+            {[["1M","month_1"],["3M","month_3"],["6M","month_6"],["1Y","year_1"],["2Y","year_2"],["3Y","year_3"],["5Y","year_5"],["7Y","year_7"],["10Y","year_10"],["20Y","year_20"],["30Y","year_30"]].map(([l,k]) => (
               <div key={k} className="text-center">
                 <div className="sub-header">{l}</div>
                 <div className="num text-term-text">
@@ -208,7 +238,7 @@ export function CC() {
         <div className="flex-1 overflow-auto scroll-thin">
           <table className="w-full text-[12px]">
             <tbody>
-              {(gainers.data ?? []).slice(0, 8).map((m, i) => (
+              {(gainers.data ?? []).slice(0, 15).map((m, i) => (
                 <tr key={m.symbol} onClick={() => openTab("INTEL", m.symbol)}
                     className="cursor-pointer border-b border-term-borderSoft hover:bg-term-amberSubtle">
                   <td className="px-2 py-1 text-term-muted num w-6">{i + 1}</td>
@@ -234,7 +264,7 @@ export function CC() {
         <div className="flex-1 overflow-auto scroll-thin">
           <table className="w-full text-[12px]">
             <tbody>
-              {(losers.data ?? []).slice(0, 8).map((m, i) => (
+              {(losers.data ?? []).slice(0, 15).map((m, i) => (
                 <tr key={m.symbol} onClick={() => openTab("INTEL", m.symbol)}
                     className="cursor-pointer border-b border-term-borderSoft hover:bg-term-amberSubtle">
                   <td className="px-2 py-1 text-term-muted num w-6">{i + 1}</td>
@@ -251,12 +281,38 @@ export function CC() {
         <div className="border-t border-term-border p-1 sub-header text-center">CLICK → INTEL</div>
       </div>
 
+      {/* MOST ACTIVE */}
+      <div className="panel">
+        <div className="panel-header">
+          <span className="text-term-amber">MOST ACTIVE</span>
+          <span className="sub-header normal-case tracking-normal font-normal cursor-pointer hover:text-term-amber" onClick={() => openTab("MOV")}>view all →</span>
+        </div>
+        <div className="flex-1 overflow-auto scroll-thin">
+          <table className="w-full text-[12px]">
+            <tbody>
+              {(mostActive.data ?? []).slice(0, 15).map((m, i) => (
+                <tr key={m.symbol} onClick={() => openTab("INTEL", m.symbol)}
+                    className="cursor-pointer border-b border-term-borderSoft hover:bg-term-amberSubtle">
+                  <td className="px-2 py-1 text-term-muted num w-6">{i + 1}</td>
+                  <td className="px-2 py-1 num text-term-amber font-semibold w-16">{m.symbol}</td>
+                  <td className="px-2 py-1 text-term-heading truncate max-w-[200px]">{m.name}</td>
+                  <td className="px-2 py-1 num text-right">{fmtPrice(m.price)}</td>
+                  <td className="px-2 py-1 num text-right w-20">{fmtPct(m.percent_change * 100)}</td>
+                </tr>
+              ))}
+              {mostActive.isLoading && <tr><td colSpan={5} className="p-3 text-term-muted">Loading…</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t border-term-border p-1 sub-header text-center">CLICK → INTEL</div>
+      </div>
+
       {/* NEWS */}
-      <div className="panel min-h-0">
+      <div className="panel min-h-0" style={{ gridColumn: "1 / -1" }}>
         <div className="panel-header"><span>MARKET HEADLINES</span></div>
         <div className="flex-1 overflow-auto scroll-thin divide-y divide-term-borderSoft">
           {news.isLoading && <div className="p-3 text-term-muted">Loading…</div>}
-          {(news.data ?? []).slice(0, 12).map((n, i) => (
+          {(news.data ?? []).slice(0, 20).map((n, i) => (
             <a key={n.id + i} href={n.url} target="_blank" rel="noreferrer"
               className="block px-3 py-1.5 hover:bg-term-amberSubtle group">
               <div className="sub-header">{fmtTime(n.date)} · {n.source}</div>
