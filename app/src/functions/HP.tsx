@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchHistorical } from "@/lib/api";
 import { fmtPrice, fmtVolume, fmtDate, fmtPct } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { useSymbolRT } from "@/lib/realtime";
 
 const RANGES = [
   { label: "1M", days: 30 },
@@ -19,8 +20,17 @@ export function HP({ symbol }: { symbol: string }) {
     queryKey: ["historical-table", symbol, range.label],
     queryFn: () => fetchHistorical(symbol, { start_date: start }),
   });
+  const rtq = useSymbolRT(symbol);
 
   const sorted = [...data].sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  // If RT data available, replace the latest close with real-time price
+  const display = useMemo(() => {
+    if (!rtq?.lp || sorted.length === 0) return sorted;
+    const copy = [...sorted];
+    copy[0] = { ...copy[0], close: rtq.lp };
+    return copy;
+  }, [sorted, rtq?.lp]);
 
   return (
     <div className="h-full flex flex-col">
@@ -52,7 +62,7 @@ export function HP({ symbol }: { symbol: string }) {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((r, i) => {
+              {display.map((r, i) => {
                 const prev = sorted[i + 1];
                 const chg = prev ? ((r.close - prev.close) / prev.close) * 100 : undefined;
                 return (

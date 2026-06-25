@@ -3,6 +3,7 @@ import { createChart, ColorType, type IChartApi, type ISeriesApi, type UTCTimest
 import { useQuery } from "@tanstack/react-query";
 import { fetchHistorical } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { useSymbolRT } from "@/lib/realtime";
 
 const RANGES = [
   { label: "1M", days: 30, interval: "1d" },
@@ -21,11 +22,13 @@ export function GP({ symbol }: { symbol: string }) {
     queryFn: () => fetchHistorical(symbol, { interval: range.interval, start_date: start }),
     staleTime: 60_000,
   });
+  const rtq = useSymbolRT(symbol);
 
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const markerRef = useRef<ISeriesApi<"Line"> | null>(null);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -48,9 +51,13 @@ export function GP({ symbol }: { symbol: string }) {
     const vol = chart.addHistogramSeries({ color: "rgba(255,140,0,0.3)", priceFormat: { type: "volume" }, priceScaleId: "" });
     vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     candle.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.22 } });
+    const marker = chart.addLineSeries({
+      color: "#ff8c00", lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+    });
     chartRef.current = chart;
     candleRef.current = candle;
     volRef.current = vol;
+    markerRef.current = marker;
     return () => { chart.remove(); chartRef.current = null; };
   }, []);
 
@@ -69,6 +76,12 @@ export function GP({ symbol }: { symbol: string }) {
     volRef.current.setData(vols);
     chartRef.current?.timeScale().fitContent();
   }, [data]);
+
+  useEffect(() => {
+    if (!markerRef.current || rtq?.lp == null) return;
+    const now = Math.floor(Date.now() / 1000) as UTCTimestamp;
+    markerRef.current.setData([{ time: now, value: rtq.lp }]);
+  }, [rtq?.lp]);
 
   return (
     <div className="flex flex-col h-full">

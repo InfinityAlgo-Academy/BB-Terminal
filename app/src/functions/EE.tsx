@@ -2,18 +2,21 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchConsensus } from "@/lib/api";
 import { fmtPrice, fmtPct } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { useSymbolRT } from "@/lib/realtime";
 
 export function EE({ symbol }: { symbol: string }) {
   const { data: e, isLoading, error } = useQuery({
     queryKey: ["consensus", symbol], queryFn: () => fetchConsensus(symbol),
   });
+  const rtq = useSymbolRT(symbol);
 
   if (isLoading) return <div className="p-4 text-term-muted uppercase text-[11px] tracking-widest">Loading…</div>;
   if (error) return <div className="p-4 text-term-red">{(error as Error).message}</div>;
   if (!e) return <div className="p-4 text-term-muted">No estimates.</div>;
 
-  const upside = e.target_consensus != null && e.current_price != null
-    ? ((e.target_consensus - e.current_price) / e.current_price) * 100
+  const currentPrice = rtq?.lp ?? e.current_price;
+  const upside = e.target_consensus != null && currentPrice != null
+    ? ((e.target_consensus - currentPrice) / currentPrice) * 100
     : undefined;
 
   const rec = (e.recommendation ?? "").toUpperCase();
@@ -33,7 +36,7 @@ export function EE({ symbol }: { symbol: string }) {
       <div className="border-l border-term-border pl-6">
         <div className="grid grid-cols-[1fr_auto] gap-y-1 gap-x-6">
           <div className="sub-header">CURRENT PRICE</div>
-          <div className="num text-right text-term-heading">{fmtPrice(e.current_price)}</div>
+          <div className="num text-right text-term-heading">{fmtPrice(currentPrice)}</div>
 
           <div className="sub-header text-term-amber">TARGET CONSENSUS</div>
           <div className="num text-right text-term-amber text-[14px] font-semibold">{fmtPrice(e.target_consensus)}</div>

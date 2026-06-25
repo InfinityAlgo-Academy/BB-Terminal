@@ -42,6 +42,10 @@ const CRYPTO_MAP = {
   "ADA":   "BINANCE:ADAUSDT",
   "LINK":  "BINANCE:LINKUSDT",
   "DOT":   "BINANCE:DOTUSDT",
+  "BNB":   "BINANCE:BNBUSDT",
+  "AVAX":  "BINANCE:AVAXUSDT",
+  "LTC":   "BINANCE:LTCUSDT",
+  "MATIC": "BINANCE:MATICUSDT",
 };
 
 function toTradingView(sym) {

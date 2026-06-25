@@ -3,11 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchOptions } from "@/lib/api";
 import { fmtPrice, fmtPct, fmtVolume } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { useSymbolRT } from "@/lib/realtime";
 
 export function OMON({ symbol }: { symbol: string }) {
   const { data = [], isLoading, error } = useQuery({
     queryKey: ["options", symbol], queryFn: () => fetchOptions(symbol), staleTime: 60_000,
   });
+  const underlyingRT = useSymbolRT(symbol);
 
   const expirations = useMemo(
     () => Array.from(new Set(data.map((o) => o.expiration))).sort(),
@@ -16,7 +18,7 @@ export function OMON({ symbol }: { symbol: string }) {
   const [exp, setExp] = useState<string | null>(null);
   const expToShow = exp ?? expirations[0];
 
-  const underlying = data[0]?.underlying_price;
+  const underlying = underlyingRT?.lp ?? data[0]?.underlying_price;
   const rows = useMemo(() => {
     if (!expToShow) return [];
     return data.filter((o) => o.expiration === expToShow);

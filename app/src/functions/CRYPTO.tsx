@@ -1,7 +1,7 @@
-import { useQueries } from "@tanstack/react-query";
-import { fetchCryptoHistorical } from "@/lib/api";
-import { fmtPrice, fmtPct, fmtVolume } from "@/lib/format";
+import { useEffect, useRef, useState } from "react";
+import { fmtPrice, fmtPct } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { rt, type RealtimePrice } from "@/lib/realtime";
 
 const COINS = [
   { sym: "BTC-USD", name: "Bitcoin" },
@@ -19,13 +19,28 @@ const COINS = [
 ];
 
 export function CRYPTO() {
-  const queries = useQueries({
-    queries: COINS.map((c) => ({
-      queryKey: ["crypto-hist", c.sym],
-      queryFn: () => fetchCryptoHistorical(c.sym, 14),
-      refetchInterval: 60_000,
-    })),
-  });
+  const [rtPrices, setRtPrices] = useState<Record<string, RealtimePrice>>({});
+  const priceHist = useRef<Record<string, number[]>>({});
+
+  useEffect(() => {
+    rt.connect();
+    const unsubs: (() => void)[] = [];
+    for (const c of COINS) {
+      const unsub = rt.subscribe(c.sym, (data) => {
+        setRtPrices(prev => ({ ...prev, [c.sym]: data }));
+        if (data.lp != null) {
+          if (!priceHist.current[c.sym]) priceHist.current[c.sym] = [];
+          const h = priceHist.current[c.sym];
+          if (h[h.length - 1] !== data.lp) {
+            h.push(data.lp);
+            if (h.length > 60) h.shift();
+          }
+        }
+      });
+      unsubs.push(unsub);
+    }
+    return () => unsubs.forEach(fn => fn());
+  }, []);
 
   return (
     <div className="p-3 text-[12px]">
@@ -39,19 +54,17 @@ export function CRYPTO() {
             <th className="text-right">24h Δ</th>
             <th className="text-right">24h %</th>
             <th className="text-right">Volume</th>
-            <th className="text-right">14d Trend</th>
+            <th className="text-right">RT Trend</th>
           </tr>
         </thead>
         <tbody>
-          {COINS.map((c, i) => {
-            const q = queries[i];
-            const data = q.data ?? [];
-            const last = data[data.length - 1];
-            const prev = data[data.length - 2];
-            const chg = last && prev ? last.close - prev.close : undefined;
-            const chgPct = last && prev ? ((last.close - prev.close) / prev.close) * 100 : undefined;
+          {COINS.map((c) => {
+            const rtItem = rtPrices[c.sym];
+            const price = rtItem?.lp;
+            const chgPct = rtItem?.chp;
+            const chg = rtItem?.ch;
             const dir = chgPct == null ? "flat" : chgPct >= 0 ? "up" : "down";
-            const vals = data.map((d) => d.close);
+            const vals = priceHist.current[c.sym] ?? [];
             const min = Math.min(...vals), max = Math.max(...vals);
             const spark = vals.length > 1 ? vals.map((v, idx) => {
               const x = (idx / (vals.length - 1)) * 100;
@@ -62,12 +75,12 @@ export function CRYPTO() {
               <tr key={c.sym}>
                 <td className="num text-term-amber font-semibold">{c.sym.replace("-USD", "")}</td>
                 <td className="text-term-heading">{c.name}</td>
-                <td className="num text-right">{fmtPrice(last?.close, last?.close != null && last.close < 1 ? 4 : 2)}</td>
+                <td className="num text-right">{fmtPrice(price, price != null && price < 1 ? 4 : 2)}</td>
                 <td className={cn("num text-right", dir === "up" && "up", dir === "down" && "down")}>
                   {chg == null ? "—" : (chg >= 0 ? "+" : "") + fmtPrice(chg, chg && Math.abs(chg) < 1 ? 4 : 2)}
                 </td>
                 <td className={cn("num text-right", dir === "up" && "up", dir === "down" && "down")}>{fmtPct(chgPct)}</td>
-                <td className="num text-right text-term-muted">{fmtVolume(last?.volume)}</td>
+                <td className="num text-right text-term-muted">{rtItem?.volume != null ? abbreviate(rtItem.volume) : "—"}</td>
                 <td className="text-right">
                   {spark && (
                     <svg viewBox="0 0 100 24" className="w-24 h-6 inline-block">
@@ -80,7 +93,14 @@ export function CRYPTO() {
           })}
         </tbody>
       </table>
-      <div className="sub-header mt-3">14-DAY TREND · YFINANCE · 60S REFRESH</div>
+      <div className="sub-header mt-3">REAL-TIME VIA TRADINGVIEW</div>
     </div>
   );
+}
+
+function abbreviate(n: number): string {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return n.toFixed(0);
 }

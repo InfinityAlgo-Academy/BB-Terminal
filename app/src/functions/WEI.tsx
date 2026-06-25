@@ -1,7 +1,9 @@
+import { useRef } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { fetchIndexHistorical } from "@/lib/api";
 import { fmtPrice, fmtPct } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { useSymbolsRT } from "@/lib/realtime";
 
 const INDICES = [
   { sym: "^GSPC",   name: "S&P 500",       region: "Americas" },
@@ -27,9 +29,20 @@ export function WEI() {
     queries: INDICES.map((idx) => ({
       queryKey: ["index-hist", idx.sym],
       queryFn: () => fetchIndexHistorical(idx.sym, 10),
-      refetchInterval: 60_000,
+      staleTime: 300_000,
     })),
   });
+  const rtPrices = useSymbolsRT(INDICES.map(i => i.sym));
+  const priceHist = useRef<Record<string, number[]>>({});
+  for (const [sym, price] of Object.entries(rtPrices)) {
+    if (price.lp == null) continue;
+    if (!priceHist.current[sym]) priceHist.current[sym] = [];
+    const h = priceHist.current[sym];
+    if (h[h.length - 1] !== price.lp) {
+      h.push(price.lp);
+      if (h.length > 60) h.shift();
+    }
+  }
 
   const regions = Array.from(new Set(INDICES.map((i) => i.region)));
 
@@ -50,20 +63,17 @@ export function WEI() {
               </tr>
             </thead>
             <tbody>
-              {INDICES.map((idx, i) => {
+              {INDICES.map((idx) => {
                 if (idx.region !== region) return null;
-                const q = queries[i];
-                const data = q.data ?? [];
-                const last = data[data.length - 1];
-                const prev = data[data.length - 2];
-                const chg = last && prev ? last.close - prev.close : undefined;
-                const chgPct = last && prev ? ((last.close - prev.close) / prev.close) * 100 : undefined;
+                const rt = rtPrices[idx.sym];
+                const chg = rt?.ch;
+                const chgPct = rt?.chp;
                 const dir = chg == null ? "flat" : chg >= 0 ? "up" : "down";
                 return (
                   <tr key={idx.sym}>
                     <td className="text-term-heading">{idx.name}</td>
                     <td className="text-term-muted num">{idx.sym}</td>
-                    <td className="num text-right">{q.isLoading ? "…" : fmtPrice(last?.close, 2)}</td>
+                    <td className="num text-right">{fmtPrice(rt?.lp, 2)}</td>
                     <td className={cn("num text-right", dir === "up" && "up", dir === "down" && "down")}>
                       {chg == null ? "—" : (chg >= 0 ? "+" : "") + fmtPrice(chg, 2)}
                     </td>
@@ -71,7 +81,7 @@ export function WEI() {
                       {fmtPct(chgPct)}
                     </td>
                     <td className="num text-right text-term-muted">
-                      {last?.volume ? (last.volume / 1e9).toFixed(2) + "B" : "—"}
+                      {rt?.volume ? (rt.volume / 1e9).toFixed(2) + "B" : "—"}
                     </td>
                   </tr>
                 );
@@ -80,7 +90,7 @@ export function WEI() {
           </table>
         </div>
       ))}
-      <div className="sub-header">LAST CLOSE COMPARED WITH PREVIOUS SESSION · REFRESHES EVERY 60S</div>
+      <div className="sub-header">REAL-TIME VIA TRADINGVIEW</div>
     </div>
   );
 }

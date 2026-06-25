@@ -12,13 +12,15 @@ import {
 } from "@/lib/signals";
 import { useWorkspace } from "@/store/workspaceStore";
 import { cn } from "@/lib/cn";
+import { useSymbolRT } from "@/lib/realtime";
 
 export function INTEL({ symbol }: { symbol: string }) {
   const openTab = useWorkspace((s) => s.openTab);
+  const rtq = useSymbolRT(symbol);
 
   const [quoteQ, profileQ, metricsQ, consensusQ, newsQ, incomeQ] = useQueries({
     queries: [
-      { queryKey: ["quote", symbol], queryFn: () => fetchQuote(symbol), refetchInterval: 5000 },
+      { queryKey: ["quote", symbol], queryFn: () => fetchQuote(symbol), staleTime: 120_000 },
       { queryKey: ["profile", symbol], queryFn: () => fetchProfile(symbol) },
       { queryKey: ["metrics", symbol], queryFn: () => fetchMetrics(symbol) },
       { queryKey: ["consensus", symbol], queryFn: () => fetchConsensus(symbol) },
@@ -34,8 +36,10 @@ export function INTEL({ symbol }: { symbol: string }) {
   const news = newsQ.data ?? [];
   const income = incomeQ.data ?? [];
 
-  const chg = q?.last_price != null && q?.prev_close != null ? q.last_price - q.prev_close : undefined;
-  const chgPct = q?.last_price != null && q?.prev_close != null ? ((q.last_price - q.prev_close) / q.prev_close) * 100 : undefined;
+  const lastPrice = rtq?.lp ?? q?.last_price;
+  const prevClose = rtq?.prev_close_price ?? q?.prev_close;
+  const chg = lastPrice != null && prevClose != null ? lastPrice - prevClose : undefined;
+  const chgPct = lastPrice != null && prevClose != null ? ((lastPrice - prevClose) / prevClose) * 100 : undefined;
   const dir = chg == null ? "flat" : chg >= 0 ? "up" : "down";
 
   // 5-year revenue sparkline
@@ -46,9 +50,9 @@ export function INTEL({ symbol }: { symbol: string }) {
 
   // Compute signals
   const technicals: Signal[] = [
-    sigMA(q?.last_price, q?.ma_50d, "50d MA"),
-    sigMA(q?.last_price, q?.ma_200d, "200d MA"),
-    sig52w(q?.last_price, q?.year_high, q?.year_low),
+    sigMA(lastPrice, q?.ma_50d, "50d MA"),
+    sigMA(lastPrice, q?.ma_200d, "200d MA"),
+    sig52w(lastPrice, q?.year_high, q?.year_low),
   ];
   const valuation: Signal[] = [
     sigPE(m?.pe_ratio),
@@ -64,7 +68,7 @@ export function INTEL({ symbol }: { symbol: string }) {
   ];
   const analyst: Signal[] = [
     sigAnalystRec(e?.recommendation, e?.recommendation_mean),
-    sigAnalystUpside(e?.current_price ?? q?.last_price, e?.target_consensus),
+    sigAnalystUpside(e?.current_price ?? lastPrice, e?.target_consensus),
   ];
   const shareholder: Signal[] = [
     sigDividend(m?.dividend_yield, m?.payout_ratio),
@@ -77,7 +81,7 @@ export function INTEL({ symbol }: { symbol: string }) {
   if (loading) return <div className="p-6 text-term-muted uppercase text-[11px] tracking-widest">Loading intelligence for {symbol}…</div>;
 
   // Detect empty/invalid symbol: no last_price AND no name = not a real equity
-  const hasPrice = q?.last_price != null;
+  const hasPrice = lastPrice != null;
   const hasName = (q?.name ?? p?.name) != null && (q?.name ?? p?.name) !== "";
   if (!hasPrice && !hasName) {
     return <NoDataBlock symbol={symbol} />;
@@ -101,7 +105,7 @@ export function INTEL({ symbol }: { symbol: string }) {
             <div className="sub-header">{p?.stock_exchange ?? q?.exchange} · {p?.sector ?? "—"}</div>
           </div>
           <div className="flex items-baseline gap-3 mt-2">
-            <div className={cn("text-3xl num font-bold", dir === "up" && "up", dir === "down" && "down")}>{fmtPrice(q?.last_price)}</div>
+            <div className={cn("text-3xl num font-bold", dir === "up" && "up", dir === "down" && "down")}>{fmtPrice(lastPrice)}</div>
             <div className={cn("text-[14px] num", dir === "up" && "up", dir === "down" && "down")}>
               {chg == null ? "" : (chg >= 0 ? "+" : "") + fmtPrice(chg)} ({fmtPct(chgPct)})
             </div>
@@ -135,7 +139,7 @@ export function INTEL({ symbol }: { symbol: string }) {
         <div className="p-3 flex flex-col gap-2">
           {analyst.map((s, i) => <SignalRow key={i} s={s} />)}
           <div className="mt-2 pt-2 border-t border-term-borderSoft grid grid-cols-2 gap-1 text-[11px]">
-            <KV k="CURRENT" v={fmtPrice(e?.current_price ?? q?.last_price)} />
+            <KV k="CURRENT" v={fmtPrice(e?.current_price ?? lastPrice)} />
             <KV k="TARGET" v={<span className="text-term-amber">{fmtPrice(e?.target_consensus)}</span>} />
             <KV k="HIGH" v={<span className="up">{fmtPrice(e?.target_high)}</span>} />
             <KV k="LOW" v={<span className="down">{fmtPrice(e?.target_low)}</span>} />
@@ -290,7 +294,7 @@ function NoDataBlock({ symbol }: { symbol: string }) {
         <div className="w-full">
           <div className="sub-header mb-2">Did you mean…</div>
           <div className="flex flex-col border border-term-border">
-            {sug.data.map((r) => (
+            {sug.data.map((r: { cik?: string; symbol: string; name?: string }) => (
               <button
                 key={r.cik || r.symbol}
                 onClick={() => openTab("INTEL", r.symbol)}

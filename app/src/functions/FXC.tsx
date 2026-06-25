@@ -1,7 +1,9 @@
+import { useRef } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { fetchFxHistorical, type Candle } from "@/lib/api";
 import { fmtPct } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { useSymbolsRT } from "@/lib/realtime";
 
 const MAJORS = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "EURGBP", "EURJPY", "GBPJPY", "USDCNY", "USDMXN"];
 
@@ -13,24 +15,31 @@ export function FXC() {
           r => r.filter((c: Candle & { symbol?: string }) =>
             c.symbol?.replace("=X", "") === p)
         ),
-      refetchInterval: 60_000,
+      staleTime: 300_000,
     })),
   });
+  const rtPrices = useSymbolsRT(MAJORS.map(p => p + "=X"));
+  const priceHist = useRef<Record<string, number[]>>({});
+  for (const [sym, price] of Object.entries(rtPrices)) {
+    if (price.lp == null) continue;
+    if (!priceHist.current[sym]) priceHist.current[sym] = [];
+    const h = priceHist.current[sym];
+    if (h[h.length - 1] !== price.lp) {
+      h.push(price.lp);
+      if (h.length > 60) h.shift();
+    }
+  }
 
   return (
     <div className="p-3 text-[12px]">
       <div className="text-term-amber text-[10px] tracking-[0.25em] font-bold border-b border-term-border pb-1 mb-2">MAJOR PAIRS</div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        {MAJORS.map((pair, i) => {
-          const q = queries[i];
-          const data = q.data ?? [];
-          const last = data[data.length - 1];
-          const prev = data[data.length - 2];
-          const chgPct = last && prev ? ((last.close - prev.close) / prev.close) * 100 : undefined;
+        {MAJORS.map((pair) => {
+          const rt = rtPrices[pair + "=X"];
+          const hist = priceHist.current[pair + "=X"] ?? [];
+          const chgPct = rt?.chp;
           const dir = chgPct == null ? "flat" : chgPct >= 0 ? "up" : "down";
-
-          // Build tiny sparkline
-          const vals = data.map((d) => d.close);
+          const vals = hist;
           const min = Math.min(...vals), max = Math.max(...vals);
           const spark = vals.length > 1 ? vals.map((v, idx) => {
             const x = (idx / (vals.length - 1)) * 100;
@@ -46,7 +55,7 @@ export function FXC() {
               </div>
               <div className="px-2 py-2 flex items-center justify-between">
                 <div className="num text-[16px] text-term-heading">
-                  {q.isLoading ? "…" : last?.close != null ? last.close.toFixed(pair.includes("JPY") ? 3 : 5) : "—"}
+                  {rt?.lp != null ? rt.lp.toFixed(pair.includes("JPY") ? 3 : 5) : "—"}
                 </div>
                 {spark && (
                   <svg viewBox="0 0 100 32" className="w-20 h-8">
@@ -58,7 +67,7 @@ export function FXC() {
           );
         })}
       </div>
-      <div className="sub-header mt-3">CLOSE-OVER-CLOSE · 60S REFRESH</div>
+      <div className="sub-header mt-3">REAL-TIME VIA TRADINGVIEW</div>
     </div>
   );
 }

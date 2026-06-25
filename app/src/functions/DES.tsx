@@ -1,15 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchProfile, fetchQuote } from "@/lib/api";
 import { fmtPrice, fmtPct, fmtInt, fmtPctFromDecimal, fmtVolume } from "@/lib/format";
+import { useSymbolRT } from "@/lib/realtime";
 
 export function DES({ symbol }: { symbol: string }) {
   const profile = useQuery({ queryKey: ["profile", symbol], queryFn: () => fetchProfile(symbol) });
-  const quote = useQuery({ queryKey: ["quote", symbol], queryFn: () => fetchQuote(symbol), refetchInterval: 5000 });
+  const quote = useQuery({ queryKey: ["quote", symbol], queryFn: () => fetchQuote(symbol), staleTime: 120_000 });
+  const rtq = useSymbolRT(symbol);
 
   const p = profile.data;
   const q = quote.data;
-  const chg = q?.last_price != null && q?.prev_close != null ? q.last_price - q.prev_close : undefined;
-  const chgPct = q?.last_price != null && q?.prev_close != null ? ((q.last_price - q.prev_close) / q.prev_close) * 100 : undefined;
+  const lastPrice = rtq?.lp ?? q?.last_price;
+  const prevClose = rtq?.prev_close_price ?? q?.prev_close;
+  const chg = lastPrice != null && prevClose != null ? lastPrice - prevClose : undefined;
+  const chgPct = lastPrice != null && prevClose != null ? ((lastPrice - prevClose) / prevClose) * 100 : undefined;
 
   if (profile.isLoading) return <Loading />;
   if (profile.error) return <ErrorBlock err={profile.error as Error} />;
@@ -28,7 +32,7 @@ export function DES({ symbol }: { symbol: string }) {
         <div className="flex items-baseline gap-4 border-t border-term-border pt-3">
           <div>
             <div className="sub-header">LAST</div>
-            <div className="text-2xl num text-term-heading">{fmtPrice(q?.last_price)}</div>
+            <div className="text-2xl num text-term-heading">{fmtPrice(lastPrice)}</div>
           </div>
           <div className={chg == null ? "text-term-muted" : chg >= 0 ? "up" : "down"}>
             <div className="sub-header">CHG</div>
@@ -36,7 +40,7 @@ export function DES({ symbol }: { symbol: string }) {
           </div>
           <div className="ml-auto text-right">
             <div className="sub-header">CURRENCY</div>
-            <div className="num">{p?.currency ?? q?.currency ?? "—"}</div>
+            <div className="num">{p?.currency ?? q?.currency ?? rtq?.currency_code ?? "—"}</div>
           </div>
         </div>
 
@@ -56,8 +60,8 @@ export function DES({ symbol }: { symbol: string }) {
         <KV k="SHARES FLOAT" v={fmtVolume(p?.shares_float)} />
         <KV k="BETA" v={p?.beta != null ? p.beta.toFixed(2) : "—"} />
         <KV k="DIV YIELD" v={fmtPctFromDecimal(p?.dividend_yield)} />
-        <KV k="52W HIGH" v={fmtPrice(q?.year_high)} />
-        <KV k="52W LOW" v={fmtPrice(q?.year_low)} />
+        <KV k="52W HIGH" v={fmtPrice(rtq?.high_price ?? q?.year_high)} />
+        <KV k="52W LOW" v={fmtPrice(rtq?.low_price ?? q?.year_low)} />
         <KV k="MA 50D" v={fmtPrice(q?.ma_50d)} />
         <KV k="MA 200D" v={fmtPrice(q?.ma_200d)} />
         <KV k="AVG VOL" v={fmtVolume(q?.volume_average)} />

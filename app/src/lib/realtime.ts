@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 const RT_URL = `ws://127.0.0.1:6901`;
 
 export interface RealtimePrice {
@@ -14,6 +16,29 @@ export interface RealtimePrice {
   lp_time?: string;
   description?: string;
   currency_code?: string;
+}
+
+export function useSymbolRT(symbol: string): RealtimePrice | null {
+  const [data, setData] = useState<RealtimePrice | null>(null);
+  useEffect(() => {
+    rt.connect();
+    return rt.subscribe(symbol, setData);
+  }, [symbol]);
+  return data;
+}
+
+export function useSymbolsRT(symbols: string[]): Record<string, RealtimePrice> {
+  const [all, setAll] = useState<Record<string, RealtimePrice>>({});
+  useEffect(() => {
+    rt.connect();
+    const unsubs = symbols.map(sym =>
+      rt.subscribe(sym, (data) => {
+        setAll(prev => ({ ...prev, [sym]: data }));
+      })
+    );
+    return () => unsubs.forEach(fn => fn());
+  }, [symbols.join(",")]);
+  return all;
 }
 
 type Listener = (data: RealtimePrice) => void;
