@@ -92,6 +92,7 @@ const tvToYahoo = new Map();       // TV symbol -> Set<original Yahoo symbol>
 const clientSubs = new Map();      // WebSocket -> Set<original Yahoo symbol>
 
 function resetTvClient() {
+  console.error("[RT] Resetting TV client");
   for (const entry of markets.values()) {
     try { entry.market.close(); } catch {}
   }
@@ -107,13 +108,26 @@ function resetTvClient() {
 function ensureTvConnected() {
   if (tvClient) return;
   tvClient = new TradingView.Client();
-  tvClient.onError(() => {});
+  tvClient.onError((...args) => {
+    console.error("[TV] Client error:", ...args);
+    resetTvClient();
+    // Immediately re-subscribe all active symbols
+    const allSyms = [...clientSubs.values()].flatMap(s => [...s]);
+    if (allSyms.length > 0) {
+      ensureTvConnected();
+      for (const sym of allSyms) {
+        const tvSym = toTradingView(sym);
+        subscribeSymbol(sym, tvSym);
+      }
+    }
+  });
   tvQuoteSession = new tvClient.Session.Quote();
 }
 
-// Watchdog: if no data for 60s, assume TV client died and reset
+// Watchdog: if no data for 30s, assume TV client died and reset
 setInterval(() => {
-  if (tvClient && Date.now() - lastDataTime > 60000 && clientSubs.size > 0) {
+  if (tvClient && Date.now() - lastDataTime > 30000 && clientSubs.size > 0) {
+    console.error("[WATCHDOG] No data for 30s — resetting TV client");
     console.error("[WATCHDOG] No data for 60s — resetting TV client");
     // Collect all active symbols before reset
     const allSyms = [...clientSubs.values()].flatMap(s => [...s]);
