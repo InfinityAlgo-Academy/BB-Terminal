@@ -86,9 +86,23 @@ function toTradingView(sym) {
 
 let tvClient = null;
 let tvQuoteSession = null;
+let lastDataTime = 0;
 const markets = new Map();        // TV symbol -> { market, refs, lastData }
 const tvToYahoo = new Map();       // TV symbol -> Set<original Yahoo symbol>
 const clientSubs = new Map();      // WebSocket -> Set<original Yahoo symbol>
+
+function resetTvClient() {
+  for (const entry of markets.values()) {
+    try { entry.market.close(); } catch {}
+  }
+  markets.clear();
+  tvToYahoo.clear();
+  if (tvQuoteSession) { try { tvQuoteSession.delete(); } catch {} }
+  if (tvClient) { try { tvClient.end(); } catch {} }
+  tvClient = null;
+  tvQuoteSession = null;
+  lastDataTime = 0;
+}
 
 function ensureTvConnected() {
   if (tvClient) return;
@@ -96,6 +110,21 @@ function ensureTvConnected() {
   tvClient.onError(() => {});
   tvQuoteSession = new tvClient.Session.Quote();
 }
+
+// Watchdog: if no data for 60s, assume TV client died and reset
+setInterval(() => {
+  if (tvClient && Date.now() - lastDataTime > 60000 && clientSubs.size > 0) {
+    console.error("[WATCHDOG] No data for 60s — resetting TV client");
+    // Collect all active symbols before reset
+    const allSyms = [...clientSubs.values()].flatMap(s => [...s]);
+    resetTvClient();
+    // Re-subscribe everything
+    for (const sym of allSyms) {
+      const tvSym = toTradingView(sym);
+      subscribeSymbol(sym, tvSym);
+    }
+  }
+}, 30000);
 
 function subscribeSymbol(yahooSym, tvSym) {
   if (markets.has(tvSym)) {
@@ -112,6 +141,7 @@ function subscribeSymbol(yahooSym, tvSym) {
   tvToYahoo.set(tvSym, yahooSet);
 
   market.onData((data) => {
+    lastDataTime = Date.now();
     entry.lastData = data;
     for (const orig of yahooSet) {
       broadcast({ type: "price", symbol: orig, data });
