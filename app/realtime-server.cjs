@@ -108,10 +108,9 @@ function resetTvClient() {
 function ensureTvConnected() {
   if (tvClient) return;
   tvClient = new TradingView.Client();
-  tvClient.onError((...args) => {
-    console.error("[TV] Client error:", ...args);
+  const onTvDisconnect = () => {
+    console.error("[TV] Client disconnected");
     resetTvClient();
-    // Immediately re-subscribe all active symbols
     const allSyms = [...clientSubs.values()].flatMap(s => [...s]);
     if (allSyms.length > 0) {
       ensureTvConnected();
@@ -120,6 +119,13 @@ function ensureTvConnected() {
         subscribeSymbol(sym, tvSym);
       }
     }
+  };
+  tvClient.onError((...args) => {
+    console.error("[TV] Client error:", ...args);
+    onTvDisconnect();
+  });
+  tvClient.onDisconnected(() => {
+    onTvDisconnect();
   });
   tvQuoteSession = new tvClient.Session.Quote();
 }
@@ -239,6 +245,13 @@ wss.on("connection", (ws) => {
 
 server.listen(PORT, () => {
   console.log(`[RT] Realtime server running on ws://127.0.0.1:${PORT}`);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[CRASH] Uncaught exception:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[CRASH] Unhandled rejection:", reason);
 });
 
 process.on("SIGTERM", () => {
