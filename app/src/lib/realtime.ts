@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 const RT_URL = `ws://127.0.0.1:6901`;
+const CACHE_KEY = "rt_prices";
 
 export interface RealtimePrice {
   lp?: number;
@@ -50,6 +51,20 @@ class RealtimeClient {
   private subs = new Set<string>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
+  constructor() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (raw) this.lastData = new Map(Object.entries(JSON.parse(raw)));
+    } catch {}
+  }
+
+  private persist() {
+    try {
+      const obj = Object.fromEntries(this.lastData);
+      localStorage.setItem(CACHE_KEY, JSON.stringify(obj));
+    } catch {}
+  }
+
   connect() {
     if (this.ws?.readyState === WebSocket.OPEN) return;
     if (this.ws?.readyState === WebSocket.CONNECTING) return;
@@ -72,6 +87,7 @@ class RealtimeClient {
       try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === "price") {
         this.lastData.set(msg.symbol, msg.data);
+        this.persist();
         const ls = this.listeners.get(msg.symbol);
         if (ls) ls.forEach((fn) => fn(msg.data));
       }
