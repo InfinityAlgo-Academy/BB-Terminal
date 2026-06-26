@@ -4,6 +4,7 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [react()],
+  base: process.env.VITE_BASE || "/OpenBB-Platform/",
   resolve: {
     alias: { "@": path.resolve(__dirname, "src") },
   },
