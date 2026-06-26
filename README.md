@@ -29,7 +29,7 @@
 <br>
 
 <p align="center">
-  <code>curl -fsSL https://raw.githubusercontent.com/vaughanf1/BB-Terminal/main/install.sh | bash</code>
+  <code>curl -fsSL https://raw.githubusercontent.com/InfinityAlgo-Academy/OpenBB-Platform/main/install.sh | bash</code>
 </p>
 
 <br>
@@ -181,13 +181,13 @@ Each rule outputs a dot: **bullish** <span style="color:#22ee22">●</span>, **b
 
 ```bash
 # One‑line install (macOS / Linux)
-curl -fsSL https://raw.githubusercontent.com/vaughanf1/BB-Terminal/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/InfinityAlgo-Academy/OpenBB-Platform/main/install.sh | bash
 ```
 
 ### Manual (after clone)
 
 ```bash
-git clone https://github.com/vaughanf1/BB-Terminal.git
+git clone https://github.com/InfinityAlgo-Academy/OpenBB-Platform.git
 cd BB-Terminal
 ./setup.sh       # OpenBB + UI deps (~3‑5 min)
 ./start.sh       # launch everything
